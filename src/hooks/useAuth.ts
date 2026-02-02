@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { authApi } from '@/services/api/authApi';
 
 interface AuthState {
   user: User | null;
@@ -18,13 +17,20 @@ export function useAuth() {
     isAdmin: false,
   });
 
-  // Check admin role via Edge Function
-  const checkAdminRole = useCallback(async () => {
-    const response = await authApi.checkAdmin();
-    if (response.success && response.data) {
-      setAuthState(prev => ({ ...prev, isAdmin: response.data!.isAdmin }));
-    } else {
+  // Check admin role directly from database
+  const checkAdminRole = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .eq('role', 'admin')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error checking admin role:', error);
       setAuthState(prev => ({ ...prev, isAdmin: false }));
+    } else {
+      setAuthState(prev => ({ ...prev, isAdmin: !!data }));
     }
   }, []);
 
@@ -43,7 +49,7 @@ export function useAuth() {
         if (session?.user) {
           // Use setTimeout to avoid race conditions
           setTimeout(() => {
-            checkAdminRole();
+            checkAdminRole(session.user.id);
           }, 0);
         } else {
           setAuthState(prev => ({ ...prev, isAdmin: false }));
@@ -61,7 +67,7 @@ export function useAuth() {
       }));
 
       if (session?.user) {
-        checkAdminRole();
+        checkAdminRole(session.user.id);
       }
     });
 
